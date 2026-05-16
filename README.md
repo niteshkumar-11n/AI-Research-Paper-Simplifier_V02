@@ -119,3 +119,4 @@ ai-research-paper-analyser/
 │   └── vite.config.js
 └── README.md
 ```
+this project for Acadamin academic
