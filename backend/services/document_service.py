@@ -1,6 +1,4 @@
 import io
-from PyPDF2 import PdfReader
-from docx import Document
 
 
 def extract_text_from_file(content: bytes, file_type: str) -> str:
@@ -16,6 +14,8 @@ def extract_text_from_file(content: bytes, file_type: str) -> str:
 
 def _extract_pdf(content: bytes) -> str:
     """Extract text from all pages of a PDF file."""
+    from PyPDF2 import PdfReader
+
     reader = PdfReader(io.BytesIO(content))
     pages = []
     for page in reader.pages:
@@ -27,6 +27,9 @@ def _extract_pdf(content: bytes) -> str:
 
 def _extract_docx(content: bytes) -> str:
     """Extract text from all paragraphs of a DOCX file."""
+    from docx import Document
+
     doc = Document(io.BytesIO(content))
     paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
     return "\n\n".join(paragraphs)
+

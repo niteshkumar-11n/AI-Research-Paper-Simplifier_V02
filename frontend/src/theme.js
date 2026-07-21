@@ -25,7 +25,7 @@ export const buildTheme = (mode) =>
           }),
     },
     typography: {
-      fontFamily: "'Inter', sans-serif",
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
       h1: { fontWeight: 800, letterSpacing: "-0.02em" },
       h2: { fontWeight: 700, letterSpacing: "-0.01em" },
       h3: { fontWeight: 700 },

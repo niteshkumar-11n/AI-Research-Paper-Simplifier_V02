@@ -32,6 +32,22 @@ class AnalysisState(TypedDict):
 # ---------------------------------------------------------------------------
 # LLM Initialization: Ollama (primary) + Gemini (fallback)
 # ---------------------------------------------------------------------------
+def check_ollama_status() -> bool:
+    """Check if Ollama is running locally on port 11434 with a short timeout."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://localhost:11434", timeout=0.5) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+is_ollama_available = check_ollama_status()
+
+if is_ollama_available:
+    logger.info("Ollama is available. Will use Ollama (qwen2.5-coder:7b) as primary LLM.")
+else:
+    logger.info("Ollama is offline/unavailable. Bypassing Ollama, will use Gemini directly.")
+
 primary_llm = ChatOllama(
     model="qwen2.5-coder:7b",
     temperature=0.3,
@@ -47,26 +63,28 @@ fallback_llm = ChatGoogleGenerativeAI(
 
 
 def _invoke_with_fallback(chain_prompt, variables: dict) -> str:
-    """Try Ollama first, fall back to Gemini on failure."""
-    # Try primary (Ollama)
-    try:
-        logger.info("Invoking primary LLM (Ollama qwen2.5-coder:7b)...")
-        chain = chain_prompt | primary_llm
-        response = chain.invoke(variables)
-        logger.info("Primary LLM succeeded.")
-        return response.content
-    except Exception as e:
-        logger.warning(f"Primary LLM failed: {e}. Falling back to Gemini...")
+    """Try Ollama first if available, fall back to Gemini on failure or if Ollama is offline."""
+    if is_ollama_available:
+        # Try primary (Ollama)
+        try:
+            logger.info("Invoking primary LLM (Ollama qwen2.5-coder:7b)...")
+            chain = chain_prompt | primary_llm
+            response = chain.invoke(variables)
+            logger.info("Primary LLM succeeded.")
+            return response.content
+        except Exception as e:
+            logger.warning(f"Primary LLM failed: {e}. Falling back to Gemini...")
 
-    # Fallback (Gemini)
+    # Fallback/Direct (Gemini)
     try:
+        logger.info("Invoking Gemini LLM...")
         chain = chain_prompt | fallback_llm
         response = chain.invoke(variables)
-        logger.info("Fallback LLM (Gemini) succeeded.")
+        logger.info("Gemini LLM succeeded.")
         return response.content
     except Exception as e:
-        logger.error(f"Fallback LLM also failed: {e}")
-        raise RuntimeError(f"Both LLMs failed. Primary: Ollama error. Fallback: {e}")
+        logger.error(f"Gemini LLM failed: {e}")
+        raise RuntimeError(f"LLM execution failed. Ollama available: {is_ollama_available}. Error: {e}")
 
 
 # ---------------------------------------------------------------------------

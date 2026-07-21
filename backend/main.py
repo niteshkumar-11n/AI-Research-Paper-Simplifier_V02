@@ -1,6 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from routes import auth, upload, history
+import logging
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="InsightDocs AI",
@@ -8,9 +12,22 @@ app = FastAPI(
     version="1.0.0",
 )
 
+import os
+
+# Allow local dev origins + any production origin set via environment variable
+_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+]
+_prod_origin = os.environ.get("CORS_ORIGIN")
+if _prod_origin:
+    _origins.append(_prod_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -19,6 +36,17 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(upload.router, prefix="/api", tags=["Upload & Analysis"])
 app.include_router(history.router, prefix="/api", tags=["History"])
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch all unhandled exceptions and return a proper JSON response.
+    This ensures CORS headers are always present even on server errors."""
+    logger.error(f"Unhandled error on {request.method} {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"},
+    )
 
 
 @app.get("/")

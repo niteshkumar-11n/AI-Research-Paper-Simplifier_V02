@@ -1,7 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from utils.jwt_handler import get_current_user
 from services.document_service import extract_text_from_file
-from agents.analysis_agent import run_analysis
 from database import history_collection
 from datetime import datetime, timezone
 
@@ -47,6 +46,7 @@ async def analyze_file(
 
     # Run AI analysis via LangGraph agent
     try:
+        from agents.analysis_agent import run_analysis
         result = await run_analysis(raw_text, file.filename, file_ext)
     except Exception as e:
         raise HTTPException(
