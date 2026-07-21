@@ -1,6 +1,14 @@
-backend/venv/
-venv/
+# Python
 __pycache__/
 *.pyc
+
+# Environment files
 .env
-node_modules/git init
+**/.env
+
+# Virtual environments
+venv/
+backend/venv/
+
+# Node
+node_modules/
