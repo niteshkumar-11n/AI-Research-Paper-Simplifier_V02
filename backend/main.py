@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Ensure backend directory is in python module search path (critical for Vercel)
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,9 +18,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
-import os
-
-# Allow local dev origins + any production origin set via environment variable
+# Allow local dev origins + Vercel deployment origins
 _origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -28,6 +32,7 @@ if _prod_origin:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
