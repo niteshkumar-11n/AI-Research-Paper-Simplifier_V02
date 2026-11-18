@@ -3,7 +3,7 @@ import re
 import asyncio
 import logging
 from typing import TypedDict, List, Dict, Any
-from langchain_ollama import ChatOllama
+import os
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import StateGraph, END
@@ -41,30 +41,22 @@ def check_ollama_status() -> bool:
     except Exception:
         return False
 
-is_ollama_available = check_ollama_status()
+def local_model():
+    if os.getenv("VERCEL") or not check_ollama_status():
+        return None
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError:
+        logger.info("Install langchain-ollama to use the local model.")
+        return None
+    return ChatOllama(model="qwen2.5-coder:7b", temperature=0.3, num_predict=4096)
 
-if is_ollama_available:
-    logger.info("Ollama is available. Will use Ollama (qwen2.5-coder:7b) as primary LLM.")
-else:
-    logger.info("Ollama is offline/unavailable. Bypassing Ollama, will use Gemini directly.")
 
-primary_llm = ChatOllama(
-    model="qwen2.5-coder:7b",
-    temperature=0.3,
-    num_predict=4096,
-)
-
-fallback_llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash-lite",
-    google_api_key=settings.GEMINI_API_KEY,
-    temperature=0.3,
-    max_output_tokens=4096,
-)
-
+primary_llm = local_model()
 
 def _invoke_with_fallback(chain_prompt, variables: dict) -> str:
     """Try Ollama first if available, fall back to Gemini on failure or if Ollama is offline."""
-    if is_ollama_available:
+    if primary_llm is not None:
         # Try primary (Ollama)
         try:
             logger.info("Invoking primary LLM (Ollama qwen2.5-coder:7b)...")
@@ -78,13 +70,21 @@ def _invoke_with_fallback(chain_prompt, variables: dict) -> str:
     # Fallback/Direct (Gemini)
     try:
         logger.info("Invoking Gemini LLM...")
-        chain = chain_prompt | fallback_llm
+        if not settings.GEMINI_API_KEY:
+            raise RuntimeError("GEMINI_API_KEY is missing")
+        gemini = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            google_api_key=settings.GEMINI_API_KEY,
+            temperature=0.3,
+            max_output_tokens=4096,
+        )
+        chain = chain_prompt | gemini
         response = chain.invoke(variables)
         logger.info("Gemini LLM succeeded.")
         return response.content
     except Exception as e:
         logger.error(f"Gemini LLM failed: {e}")
-        raise RuntimeError(f"LLM execution failed. Ollama available: {is_ollama_available}. Error: {e}")
+        raise RuntimeError("The analysis provider is unavailable.") from e
 
 
 # ---------------------------------------------------------------------------
@@ -171,25 +171,16 @@ def analyze_node(state: AnalysisState) -> dict:
         logger.error(f"Analysis failed: {e}")
         data = None
 
-    if data is None:
-        # Graceful fallback when LLM returns non-JSON
-        data = {
-            "overview": [
-                "The document presents a comprehensive overview of its subject matter",
-                "Key concepts and background context are established",
-                "The scope and objectives of the document are outlined",
-            ],
-            "methodology": [
-                "A structured analytical approach is employed throughout",
-                "Multiple perspectives and evidence sources are considered",
-                "Logical reasoning underpins the document's arguments",
-            ],
-            "key_points": [
-                "Several significant findings are presented",
-                "Critical insights emerge from the analysis",
-                "Actionable conclusions are drawn from the content",
-            ],
-            "summary": "The document provides a detailed analysis of its subject matter, covering key concepts and methodologies.",
+    if not isinstance(data, dict) or not isinstance(data.get("summary"), str) or not data["summary"].strip():
+        # Preserve useful source text when a provider is unavailable. Label the
+        # result so readers can distinguish an excerpt from an AI summary.
+        excerpt = state["cleaned_text"][:1200].strip()
+        return {
+            "overview": [],
+            "methodology": [],
+            "key_points": [],
+            "summary": "Source excerpt (AI analysis unavailable): " + excerpt,
+            "error": "analysis_unavailable",
         }
 
     return {
@@ -238,6 +229,8 @@ Rules:
 
 
 def extract_stats_node(state: AnalysisState) -> dict:
+    if state.get("error"):
+        return {"graph_data": {}}
     chunks = state["chunks"]
     combined = "\n".join(chunks[:3])
 
@@ -257,23 +250,7 @@ def extract_stats_node(state: AnalysisState) -> dict:
             if e.get("source") in node_ids and e.get("target") in node_ids
         ]
     else:
-        graph_data = {
-            "title": "Document Knowledge Graph",
-            "nodes": [
-                {"id": "1", "label": "Main Topic"},
-                {"id": "2", "label": "Key Concept A"},
-                {"id": "3", "label": "Key Concept B"},
-                {"id": "4", "label": "Supporting Detail"},
-                {"id": "5", "label": "Conclusion"},
-            ],
-            "edges": [
-                {"source": "1", "target": "2", "label": "covers"},
-                {"source": "1", "target": "3", "label": "discusses"},
-                {"source": "2", "target": "4", "label": "supported by"},
-                {"source": "3", "target": "5", "label": "leads to"},
-            ],
-            "description": "Key relationships extracted from the document",
-        }
+        graph_data = {}
 
     return {"graph_data": graph_data}
 
